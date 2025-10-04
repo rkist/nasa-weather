@@ -3,7 +3,9 @@ __pycache__/
 *.pyc
 .DS_Store
 .env
-data/
+# Track data folder in git
+!data/
+!data/**
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
