@@ -57,4 +57,20 @@ python scripts/fetch_meteomatics.py --username your_username --password your_pas
 - Time range is constructed relative to current UTC, rounded to the hour.
 - Response parsing expects Meteomatics JSON shape with `data → coordinates → dates`.
 
+## Web map (Google Maps + Meteomatics CSV)
+
+A lightweight web app under `web/` visualizes Meteomatics CSV data on Google Maps as either a heatmap or colored circles.
+
+### Run locally
+
+```bash
+cd /Users/raul.kist/Code/rkist/nasa-weather
+python3 -m http.server 8080
+# then open http://localhost:8080/web/
+```
+
+Default CSV URL is `../data/saopaulo_20251001_20251002_0p05deg.csv`. You can change the URL and click "Load CSV", then select parameter, timestamp, and view mode.
+
+The map uses the provided Google Maps API key embedded in `web/index.html`.
+
 

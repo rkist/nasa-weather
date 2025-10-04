@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Meteomatics x Google Maps</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Meteomatics Weather on Google Maps</h1>
+    <div class="controls">
+      <label>
+        CSV URL
+        <input id="csvUrl" type="text" placeholder="../data/saopaulo_20251001_20251002_0p05deg.csv" />
+      </label>
+      <button id="loadBtn">Load CSV</button>
+      <label>
+        Parameter
+        <select id="parameterSelect"></select>
+      </label>
+      <label>
+        Timestamp
+        <select id="timeSelect"></select>
+      </label>
+      <label>
+        View
+        <select id="viewMode">
+          <option value="heatmap">Heatmap</option>
+          <option value="circles">Circles</option>
+        </select>
+      </label>
+    </div>
+  </header>
+
+  <main>
+    <div id="map"></div>
+    <aside id="legend"></aside>
+  </main>
+
+  <script src="app.js"></script>
+  <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA24aWieTT9V67Wc42u_Y-_SV7_k5BDvJY&libraries=visualization&callback=initMap"></script>
+</body>
+<!--
+This app visualizes Meteomatics CSV outputs over Google Maps.
+Controls allow selecting parameter, timestamp, and view mode.
+-->
+</html>
+
+
