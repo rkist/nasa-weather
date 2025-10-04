@@ -46,15 +46,36 @@ def generate_time_spec(hours: int, interval: str) -> QueryTimeSpec:
     return QueryTimeSpec(start_iso=start_iso, end_iso=end_iso, interval=interval)
 
 
+def build_coordinate_segment_point(latitude: float, longitude: float) -> str:
+    return f"{latitude:.6f},{longitude:.6f}"
+
+
+def build_coordinate_segment_grid(
+    lat_min: float,
+    lon_min: float,
+    lat_max: float,
+    lon_max: float,
+    lat_step: float,
+    lon_step: float,
+) -> str:
+    # Meteomatics expects: lat_top,lon_left_lat_bottom,lon_right:step_lat,step_lon
+    lat_top = max(lat_min, lat_max)
+    lat_bottom = min(lat_min, lat_max)
+    lon_left = min(lon_min, lon_max)
+    lon_right = max(lon_min, lon_max)
+    return (
+        f"{lat_top:.6f},{lon_left:.6f}_{lat_bottom:.6f},{lon_right:.6f}:"
+        f"{lat_step:.6f},{lon_step:.6f}"
+    )
+
+
 def build_url(
     base_url: str,
     time_spec: QueryTimeSpec,
     parameters: str,
-    latitude: float,
-    longitude: float,
+    coordinate_segment: str,
     output_format: str,
 ) -> str:
-    coordinate_segment = f"{latitude:.6f},{longitude:.6f}"
     return (
         f"{base_url.rstrip('/')}/"
         f"{time_spec.to_path_segment()}/"
@@ -154,8 +175,21 @@ def parse_args() -> argparse.Namespace:
         description="Fetch and summarize Meteomatics weather data",
     )
 
-    parser.add_argument("--lat", type=float, default=DEFAULT_LATITUDE, help="Latitude")
-    parser.add_argument("--lon", type=float, default=DEFAULT_LONGITUDE, help="Longitude")
+    # Point mode (default) or grid mode (via --bbox and --grid-steps)
+    parser.add_argument("--lat", type=float, default=DEFAULT_LATITUDE, help="Latitude (point mode)")
+    parser.add_argument("--lon", type=float, default=DEFAULT_LONGITUDE, help="Longitude (point mode)")
+    parser.add_argument(
+        "--bbox",
+        type=str,
+        default=None,
+        help="Bounding box for grid as lat_min,lon_min,lat_max,lon_max",
+    )
+    parser.add_argument(
+        "--grid-steps",
+        type=str,
+        default=None,
+        help="Grid step as dlat,dlon (e.g., 0.05,0.05)",
+    )
     parser.add_argument(
         "--parameters",
         type=str,
@@ -166,7 +200,19 @@ def parse_args() -> argparse.Namespace:
         "--hours",
         type=int,
         default=DEFAULT_HOURS,
-        help="Hours ahead from now (UTC) to include",
+        help="Hours ahead from now (UTC) to include (ignored if --start/--end provided)",
+    )
+    parser.add_argument(
+        "--start",
+        type=str,
+        default=None,
+        help="Start time ISO8601 (e.g., 2025-10-01T00:00:00Z)",
+    )
+    parser.add_argument(
+        "--end",
+        type=str,
+        default=None,
+        help="End time ISO8601 (e.g., 2025-10-02T00:00:00Z)",
     )
     parser.add_argument(
         "--interval",
@@ -179,7 +225,7 @@ def parse_args() -> argparse.Namespace:
         dest="output_format",
         type=str,
         default=DEFAULT_OUTPUT_FORMAT,
-        choices=["json"],
+        choices=["json", "csv", "netcdf"],
         help="Response format",
     )
     parser.add_argument(
@@ -213,13 +259,26 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    time_spec = generate_time_spec(hours=args.hours, interval=args.interval)
+    if args.start and args.end:
+        time_spec = QueryTimeSpec(start_iso=args.start, end_iso=args.end, interval=args.interval)
+    else:
+        time_spec = generate_time_spec(hours=args.hours, interval=args.interval)
+
+    if args.bbox and args.grid_steps:
+        try:
+            lat_min, lon_min, lat_max, lon_max = [float(x) for x in args.bbox.split(",")]
+            dlat, dlon = [float(x) for x in args.grid_steps.split(",")]
+        except Exception as exc:
+            raise SystemExit(f"Invalid --bbox or --grid-steps: {exc}")
+        coordinate_segment = build_coordinate_segment_grid(lat_min, lon_min, lat_max, lon_max, dlat, dlon)
+    else:
+        coordinate_segment = build_coordinate_segment_point(args.lat, args.lon)
+
     url = build_url(
         base_url=args.base_url,
         time_spec=time_spec,
         parameters=args.parameters,
-        latitude=args.lat,
-        longitude=args.lon,
+        coordinate_segment=coordinate_segment,
         output_format=args.output_format,
     )
 
@@ -230,19 +289,36 @@ def main() -> None:
         print(f"HTTP {response.status_code}: {response.text[:500]}")
         raise SystemExit(1)
 
-    payload = response.json()
-
     timestamp_label = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    output_path = (
-        Path(args.out)
-        if args.out
-        else Path("data") / f"meteomatics_{timestamp_label}.json"
-    )
-    save_json(payload, output_path)
 
-    print(f"Saved raw response to {output_path}")
-    print()
-    print(summarize_response(payload))
+    if args.output_format == "json":
+        payload = response.json()
+        output_path = (
+            Path(args.out)
+            if args.out
+            else Path("data") / f"meteomatics_{timestamp_label}.json"
+        )
+        save_json(payload, output_path)
+        print(f"Saved raw response to {output_path}")
+        print()
+        print(summarize_response(payload))
+    else:
+        # For csv/netcdf, save raw bytes/text without summary
+        default_ext = "csv" if args.output_format == "csv" else "nc"
+        output_path = (
+            Path(args.out)
+            if args.out
+            else Path("data") / f"meteomatics_{timestamp_label}.{default_ext}"
+        )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        mode = "wb" if args.output_format in {"netcdf"} else "w"
+        if mode == "wb":
+            with output_path.open(mode) as f:
+                f.write(response.content)
+        else:
+            with output_path.open(mode, encoding="utf-8") as f:
+                f.write(response.text)
+        print(f"Saved raw response to {output_path}")
 
 
 if __name__ == "__main__":
